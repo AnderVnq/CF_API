@@ -1,7 +1,6 @@
 from utils.convertidores import parse_dimensions , parse_weight
 from utils.extractImages import extract_images,download_images
 from utils.utils import  get_buying_option_type,obtener_stock_y_cantidad ,obtener_precio , obtener_descripcion , extract_variations_values ,extract_brand,extract_size,extract_dimensions_and_brand,filtrar_ropa_y_eliminar_sku
-from models.amazon import Amazon
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -10,8 +9,6 @@ from selenium.webdriver.chrome.options import Options
 from amazoncaptcha import AmazonCaptcha
 from selenium.webdriver.common.keys import Keys
 import time
-import json
-import re
 from bs4 import BeautifulSoup
 import asyncio
 import firebase_admin
