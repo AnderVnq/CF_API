@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.egg-info/
+dist/
+build/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+*.egg
+
+# Flask
+instance/
+.pytest_cache/
+coverage/
+*.log
+*.pot
+*.pyc
+*.pyd
+
+# Firebase
+storagecampeonato-firebase-adminsdk-lwku5-11ad60cec5.json
+
+# Configuration Files
+*.env
+*.local
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Other
+.DS_Store
+Thumbs.db
