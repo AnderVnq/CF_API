@@ -124,14 +124,24 @@ def parse_dimensions(dimension_string):
     # Reemplaza comas por puntos
     dimension_string = dimension_string.replace(',', '.')
     
-    # Regex para capturar las dimensiones y la unidad
-    match = re.search(r"(\d+\.?\d*) x (\d+\.?\d*) x (\d+\.?\d*) (pulgadas|inches|inch|in|pies|pie|feet|ft)", dimension_string)
+    # Regex para capturar las dimensiones en varios formatos
+    match = re.search(
+        r"(\d+\.?\d*)\s*[xX]\s*(\d+\.?\d*)\s*[xX]?\s*(\d+\.?\d*)?\s*(pulgadas|inches|inch|in|pies|pie|feet|ft)|"
+        r"(\d+\.?\d*)\"l\.\s*x\s*(\d+\.?\d*)\"an\.\s*(?:x\s*(\d+\.?\d*)\"al\.\s*)?(pulgadas|inches|inch|in|pies|pie|feet|ft)?",
+        dimension_string
+    )
     
     if match:
-        length = float(match.group(1))
-        width = float(match.group(2))
-        height = float(match.group(3))
-        unit = match.group(4)
+        if match.group(1):  # Primer formato
+            length = float(match.group(1))
+            width = float(match.group(2))
+            height = float(match.group(3)) if match.group(3) else 0  # Asignar 0 si no se proporciona altura
+            unit = match.group(4)
+        else:  # Segundo formato
+            length = float(match.group(5))
+            width = float(match.group(6))
+            height = float(match.group(7)) if match.group(7) else 1  # Asignar 0 si no se proporciona altura
+            unit = match.group(8) if match.group(8) else 'pulgadas'  # Asumir pulgadas si no se especifica unidad
 
         # Convertir a centímetros
         length_cm = convert_length(length, unit)
