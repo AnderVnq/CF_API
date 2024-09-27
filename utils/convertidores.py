@@ -140,7 +140,7 @@ def parse_dimensions(dimension_string):
         else:  # Segundo formato
             length = float(match.group(5))
             width = float(match.group(6))
-            height = float(match.group(7)) if match.group(7) else 1  # Asignar 0 si no se proporciona altura
+            height = float(match.group(7)) if match.group(7) else width  # Asignar 0 si no se proporciona altura
             unit = match.group(8) if match.group(8) else 'pulgadas'  # Asumir pulgadas si no se especifica unidad
 
         # Convertir a centímetros

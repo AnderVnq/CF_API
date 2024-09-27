@@ -1,7 +1,8 @@
 from utils.convertidores import parse_dimensions , parse_weight
 from utils.extractImages import extract_images,download_images
-from utils.utils import  get_buying_option_type,obtener_stock_y_cantidad ,obtener_precio , obtener_descripcion , extract_variations_values ,extract_brand,extract_size,extract_dimensions_and_brand,filtrar_ropa_y_eliminar_sku
+from utils.utils import  get_buying_option_type, is_page_not_found,obtener_stock_y_cantidad ,obtener_precio , obtener_descripcion , extract_variations_values ,extract_brand,extract_size,extract_dimensions_and_brand,filtrar_ropa_y_eliminar_sku
 from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -13,6 +14,7 @@ from bs4 import BeautifulSoup
 import asyncio
 import firebase_admin
 from firebase_admin import credentials
+
 
 cred = credentials.Certificate('storagecampeonato-firebase-adminsdk-lwku5-11ad60cec5.json')
 firebase_admin.initialize_app(cred, {
@@ -31,7 +33,7 @@ def iniciar_webdriver(language='en_US'):
     }
 
     opts=Options()
-    #opts.add_argument("--headless") 
+    opts.add_argument("--headless") 
     opts.add_argument("--start-maximized")
     opts.add_argument("--disable-notifications")
     opts.add_argument("--disable-gpu")
@@ -100,24 +102,28 @@ def open_page(driver: webdriver.Chrome, variantes: list):
 
         is_resolve = resolve_captcha(driver)
         if is_resolve:
-            #Optional: You can uncomment this if you want to set the location
-            text_direccion = driver.find_element(By.ID, "glow-ingress-line2").text.strip()
-            if text_direccion == "Perú" or text_direccion == "Peru":
-                boton_locacion = driver.find_element(By.ID, "nav-global-location-popover-link")
-                boton_locacion.click()
-                time.sleep(2)
-                zipcode_input = driver.find_element(By.ID, "GLUXZipUpdateInput")
-                zipcode_input.send_keys("33101")
-                zipcode_input.send_keys(Keys.RETURN)
-                time.sleep(1)
-                container_popup = driver.find_element(By.XPATH, "//div[@class='a-popover-footer']")
-                time.sleep(4)
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "GLUXConfirmClose"))
-                )
-                input_button = container_popup.find_element(By.XPATH, ".//input[@id='GLUXConfirmClose']")
-                input_button.click()
-                time.sleep(2)
+            try:
+                #Optional: You can uncomment this if you want to set the location
+                text_direccion = driver.find_element(By.ID, "glow-ingress-line2").text.strip()
+                if text_direccion == "Perú" or text_direccion == "Peru":
+                    boton_locacion = driver.find_element(By.ID, "nav-global-location-popover-link")
+                    boton_locacion.click()
+                    time.sleep(2)
+                    zipcode_input = driver.find_element(By.ID, "GLUXZipUpdateInput")
+                    zipcode_input.send_keys("33101")
+                    zipcode_input.send_keys(Keys.RETURN)
+                    time.sleep(1)
+                    container_popup = driver.find_element(By.XPATH, "//div[@class='a-popover-footer']")
+                    time.sleep(4)
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "GLUXConfirmClose"))
+                    )
+                    input_button = container_popup.find_element(By.XPATH, ".//input[@id='GLUXConfirmClose']")
+                    input_button.click()
+                    time.sleep(2)
+            except NoSuchElementException:
+                pass
+
 
             resultado = extract_info(driver,variant)
             resultado_dic = resultado
@@ -132,10 +138,17 @@ def extract_info(driver: webdriver.Chrome, data: dict):
     #driver.implicitly_wait(5)
 
 
-
     html = driver.page_source
-    
+    soup = BeautifulSoup(html, "html.parser")
 
+    page_not_found=is_page_not_found(soup)
+    if(page_not_found):
+        print(page_not_found)
+
+        data['stock']=0
+        data['quantity']=0
+        return data
+    
     # Extraer datos de la página
     titulo = driver.find_element(By.ID, "productTitle").text
     print(titulo)

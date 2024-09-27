@@ -437,6 +437,26 @@ def filtrar_ropa_y_eliminar_sku(diccionario, ropa, lista_skus_a_eliminar):
 
 
 
+def is_page_not_found(soup:BeautifulSoup) -> bool:
+    # Obtiene el HTML de la página
+
+    
+    # Busca la etiqueta <title>
+    title_tag = soup.find('title')
+    if title_tag:
+        title_text = title_tag.text.strip()
+        if "Page Not Found" in title_text or "Documento no encontrado" in title_text:
+            return True
+
+    # Verifica el contenido del <body> para mensajes de error
+    body_tag = soup.find('body')
+    if body_tag:
+        body_text = body_tag.text.strip()
+        if "Lo sentimos. La dirección web que has especificado no es una página activa de nuestro sitio." in body_text:
+            return True
+
+    return False
+
 
 
 
