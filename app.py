@@ -1,30 +1,11 @@
 from flask import Flask
 from config import Config
-from flask_sqlalchemy import SQLAlchemy
-from sshtunnel import SSHTunnelForwarder
 from routes.amazon_routes import product_bp
-
 
 
 
 app = Flask(__name__)
 app.config.from_object(Config)
-
-
-# server = SSHTunnelForwarder(
-#     (app.config['SSH_HOST'], app.config['SSH_PORT']),
-#     ssh_username=app.config['SSH_USER'],
-#     ssh_password=app.config['SSH_PASSWORD'],  # O usa ssh_pkey para la clave privada
-#     remote_bind_address=(app.config['MYSQL_HOST'], 3306)
-# )
-
-# server.start()
-
-# # Configurar la URI de la base de datos usando la dirección local del túnel
-# app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql://{app.config["MYSQL_USER"]}:{app.config["MYSQL_PASSWORD"]}@127.0.0.1:{server.local_bind_port}/{app.config["MYSQL_DB"]}'
-# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# db = SQLAlchemy(app)
 
 
 
