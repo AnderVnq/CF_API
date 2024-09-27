@@ -189,7 +189,9 @@ def obtener_descripcion(soup: BeautifulSoup) -> str:
         # Intentar obtener la descripción desde el contenedor principal
         descripcion_element = soup.find(id="feature-bullets")
         if descripcion_element:
-            descripcion = descripcion_element.get_text(strip=True)
+            desc_ul = descripcion_element.find('ul')
+            #print(desc_ul.get_text(strip=True))
+            descripcion = desc_ul.get_text(strip=True)
         else:
             # Si no se encuentra, intentar obtener desde otro contenedor
             texto_listas = []
@@ -346,10 +348,10 @@ def extract_dimensions_and_brand(soup):
         for row in rows:
             th = row.find('th').text.strip() if row.find('th') else ''
 
-            if "Marca" or "Fabricante" in th:
-                marca = row.find('td').text.strip() if row.find('td') else ''
-                brand_sanitizado = marca
-                # print("Marca", brand_sanitizado)
+            if brand_sanitizado ==None:
+                if "Marca" in th or "Fabricante" in th:
+                    marca = row.find('td').text.strip() if row.find('td') else ''
+                    brand_sanitizado = marca
 
             if "Dimensiones" in th or "Dimensions" in th:
                 dimensiones_producto = row.find('td').text.strip() if row.find('td') else ''
