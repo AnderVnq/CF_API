@@ -2,10 +2,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-#import os
+import re
 import aiohttp
 import asyncio
 from firebase_admin import storage
+import json
+
 
 def extract_images(driver, hover_limit=4, wait_time=2):
     """
@@ -58,35 +60,134 @@ def extract_images(driver, hover_limit=4, wait_time=2):
     return images_product
 
 
+image_block_regex = re.compile('ImageBlockATF')
 
-async def download_images(image_urls, sku):
+#def extract_data_image_by_size(soup):
+
+
+    #script_tag = soup.find('script', text=re.compile('ImageBlockATF'))
+def extract_data_image_by_size(soup):
+    # Compilar la expresión regular solo una vez
+    extracted_urls = []
+
+    # Busca el script que contiene la información de las imágenes
+    script_tag = soup.find('script', text=image_block_regex)
+    if script_tag:
+        script_content = script_tag.string.strip()
+
+        # Limpieza del contenido del script
+        cleaned_script_content = re.sub(r'\\n|\\\'| +|\n', '', script_content).strip()
+        cleaned_script_content = cleaned_script_content.split(":{\'initial\':")[1]
+        clean_text = cleaned_script_content.split("},\'colorToAsin\'")[0]
+
+        if clean_text:
+            # texto_for_regex = cleaned_script_content[1]
+            # clean_text = texto_for_regex.split("},'colorToAsin'")[0]
+            # Extraer las URLs de las imágenes
+            json_data = json.loads(clean_text)
+            for item in json_data:
+                if item.get('main'):
+                    main_image_url = next(iter(item['main']))  # Obtiene la primera imagen
+                    extracted_urls.append(main_image_url)
+                    
+                    # Si ya tenemos 4 URLs, rompemos el bucle
+                    if len(extracted_urls) >= 4:
+                        break
+
+    if extracted_urls:
+        return extracted_urls[:4]
+    
+    # Retornar None si no se encontraron imágenes
+    return None
+        # Usar una expresión regular para extraer el contenido del objeto JSON
+        # match = re.search(r'=\{(.*?)\};', clean_text)
+        # #print(match.string)
+        # #print("match despues del sting")
+        # #print(match.group(1))
+        # if match:
+        #     object_string = match.group(1)
+        #     object_string = object_string.replace("'", '"')
+        #     object_string = re.sub(r'(\w+):', r'"\1":', object_string)  # Poner las claves entre comillas
+        #     object_string = object_string.rstrip(',') 
+        #     #print(object_string)
+        #     # Convertir la cadena de texto a un diccionario JSON
+        #     json_data = json.loads('{' + object_string + '}')
+        #     return json_data
+        # else:
+        #     print("No se encontró el objeto JSON en el script.")
+        #     return None
+
+
+
+
+
+
+
+# def extract_images_by_size(data):
+#     extracted_urls = []
+
+#     for item in data:
+#         # Asegurarse de que hay al menos una imagen en 'main'
+#         if item['main']:
+#             # Obtener la primera imagen del 'main' directamente
+#             main_image_url = next(iter(item['main']))
+#             extracted_urls.append(main_image_url)
+
+#         # Limitar el tamaño de la lista a un máximo de 6 URLs
+#         if len(extracted_urls) >= 5:
+#             break
+
+#     return extracted_urls
+
+
+
+
+
+async def download_images(image_urls, sku, max_images=4):
     sem = asyncio.Semaphore(5)  # Limitar a 5 descargas simultáneas
     sku_lower = sku.lower()
     
     # Lista para almacenar las URLs de las imágenes
     image_links = []
 
+    # Limitar la lista de URLs a descargar a un máximo de `max_images`
+    image_urls_limited = image_urls[:max_images]
+
     async def download_image(session, url, index):
         async with sem:  # Adquirir el semáforo
-            async with session.get(url) as response:
-                if response.status == 200:
-                    image_data = await response.read()
-                    image_name = f"Public/Images/{sku_lower}/{sku_lower}_{index}.jpg"
-                    
-                    # Sube la imagen a Firebase Storage
-                    bucket = storage.bucket()
-                    blob = bucket.blob(image_name)
-                    blob.upload_from_string(image_data, content_type='image/jpeg')
-                    
-                    # Obtiene la URL de descarga
-                    image_url = blob.public_url
-                    image_links.append(image_url)  # Agrega la URL a la lista
-                    print(f"{image_name} subida a Firebase. URL: {image_url}")
-                else:
-                    print(f"Error al descargar {url}: {response.status}")
+            try:
+                async with session.get(url, timeout=10) as response:  # Establecer timeout de 10 segundos
+                    if response.status == 200:
+                        image_data = await response.read()
+                        image_name = f"Public/Images/{sku_lower}/{sku_lower}_{index}.jpg"
+
+                        # Sube la imagen a Firebase Storage
+                        bucket = storage.bucket()
+                        blob = bucket.blob(image_name)
+                        blob.upload_from_string(image_data, content_type='image/jpeg')
+
+                        # Obtiene la URL de descarga
+                        image_url = blob.public_url
+                        image_links.append(image_url)  # Agrega la URL a la lista
+                        print(f"{image_name} subida a Firebase. URL: {image_url}")
+                    else:
+                        print(f"Error al descargar {url}: {response.status}")
+            except asyncio.TimeoutError:
+                print(f"Timeout al descargar {url}")
+            except Exception as e:
+                print(f"Error inesperado con {url}: {e}")
+
+    async def retry_download(session, url, index, retries=3):
+        for attempt in range(retries):
+            try:
+                await download_image(session, url, index)
+                break  # Si tuvo éxito, salimos del bucle
+            except Exception as e:
+                print(f"Intento {attempt + 1} fallido para {url}: {e}")
+                await asyncio.sleep(2)  # Esperar antes de reintentar
 
     async with aiohttp.ClientSession() as session:
-        tasks = [download_image(session, url, index) for index, url in enumerate(image_urls)]
+        tasks = [retry_download(session, url, index) for index, url in enumerate(image_urls_limited)]
         await asyncio.gather(*tasks)
 
-    return image_links 
+    return image_links

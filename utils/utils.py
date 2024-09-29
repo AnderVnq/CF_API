@@ -7,11 +7,6 @@ import json
 import re
 from bs4 import BeautifulSoup
 
-from utils.convertidores import parse_dimensions
-
-
-
-
 
 def sanitizar_precio(precio_normal):
     # Combina la lista en un solo string y elimina espacios en blanco al inicio y al final
@@ -44,29 +39,28 @@ def sanitizar_precio(precio_normal):
 
 def get_buying_option_type(soup: BeautifulSoup):
     try:
-        # Verificar si existe el div para productos usados en todo el DOM
-        used_product_div = soup.find(id='used_buybox_desktop')
-        if used_product_div:
+        # Comprobar si el producto es usado directamente
+        if soup.find(id='used_buybox_desktop'):
             return False  # El producto es usado, retorna False
 
         # Buscar el div con los datos de precios
         objetos_div = soup.find('div', class_='a-section aok-hidden twister-plus-buying-options-price-data')
+        
+        # Retornar False si no se encuentra el div
+        if not objetos_div or not objetos_div.text.strip():
+            return False
 
-        if not objetos_div:
-            return False  # Si no se encuentra el div con la información de compra, retorna False
-
-        # Extraer el texto JSON y convertirlo en un diccionario
+        # Extraer y procesar el JSON en una sola línea
         price_data = json.loads(objetos_div.text)
 
-        # Recorre los grupos para encontrar el tipo "NEW" y retorna True si lo encuentra
-        for group in price_data.get("desktop_buybox_group_1", []):
-            if group.get("buyingOptionType") == "NEW":
-                return True  # Retorna True si el producto es nuevo
+        # Retornar True si se encuentra un grupo con tipo "NEW"
+        return any(group.get("buyingOptionType") == "NEW" for group in price_data.get("desktop_buybox_group_1", []))
 
-        return False  # Retorna False si no se encuentra el valor "NEW"
-
+    except json.JSONDecodeError:
+        print("Error al decodificar el JSON de precios.")
+        return False
     except Exception as e:
-        print(f"Ocurrió un error: {e}")
+        print(f"Ocurrió un error inesperado: {e}")
         return False
     
 
@@ -110,42 +104,35 @@ def get_buying_option_type(soup: BeautifulSoup):
 
 def obtener_stock_y_cantidad(soup: BeautifulSoup):
     en_stock = False
-    cantidad_max = 0
+    cantidad_max = None  # Inicializar en None
 
     try:
-        # Buscar el texto de disponibilidad
+        # Buscar el texto de disponibilidad y limpiar espacios
         stock = soup.find(id="availability").get_text(strip=True)
 
-        # Verificar si está disponible o si se indica un stock limitado
+        # Verificar disponibilidad
         if "Disponible" in stock or "In stock" in stock:
             en_stock = True
 
-            # Buscar el contenedor donde se indican las cantidades
+            # Buscar el contenedor de cantidad
             cantidad_container = soup.find(id="quantity")
             if cantidad_container:
-                # Obtener el texto del contenedor y limpiar espacios
+                # Obtener la última cantidad en el texto
                 cantidad_texto = cantidad_container.get_text()
-                # Dividir el texto en números y eliminar espacios
                 cantidades = cantidad_texto.split()
-                # Obtener la última cantidad, convertir a entero
-                if cantidades:
-                    cantidad_max = int(cantidades[-1])  # Obtener la última cantidad
+                if cantidades:  # Si hay cantidades disponibles
+                    try:
+                        cantidad_max = int(cantidades[-1])  # Obtener la última cantidad
+                    except ValueError:
+                        cantidad_max = None  # Mantener como None si no se puede convertir
 
-            # Si no existe dropdown de cantidad, mantener la cantidad como 1 por defecto
-            if cantidad_max == 0:
-                cantidad_max = 1
-
-        # Caso donde el stock indica un número limitado en el texto
-        else:
-            match = re.findall(r'\d+', stock)  # Encuentra todos los números en el texto
-            if match:
-                en_stock = True
-                cantidad_max = int(match[0]) 
+        # Verificar si hay stock limitado en el texto
+        elif match := re.search(r'\d+', stock):  # Usar el operador walrus para simplificar
+            en_stock = True
+            cantidad_max = int(match.group(0))  # Obtener el primer número encontrado
 
     except Exception as e:
         print(f"Ocurrió un error: {e}")
-        en_stock = False
-        cantidad_max = 0
 
     return en_stock, cantidad_max
 
@@ -155,63 +142,44 @@ def obtener_stock_y_cantidad(soup: BeautifulSoup):
 
 def obtener_precio(soup: BeautifulSoup, is_new: bool) -> float:
     """Obtiene el precio de un producto dependiendo si es nuevo o usado."""
-    precio_normal = None
-
+    
     try:
-        if is_new:
-            # Obtener precio para producto nuevo
-            precio_element = soup.select_one("#corePrice_feature_div span")
-            if precio_element:
-                precio_normal = precio_element.get_text(strip=True)
-        else:
-            # Obtener precio para producto usado
-            precio_element = soup.select_one("#usedBuySection .a-size-base.a-color-price.offer-price.a-text-normal")
-            if precio_element:
-                precio_normal = precio_element.get_text(strip=True)
-
-        # Sanitizar el precio y devolverlo
-        if precio_normal:
-            precio_sanitizado = sanitizar_precio(precio_normal)
-            return precio_sanitizado
+        # Determinar el selector según el tipo de producto
+        selector = "#corePrice_feature_div span" if is_new else "#usedBuySection .a-size-base.a-color-price.offer-price.a-text-normal"
+        precio_element = soup.select_one(selector)
+        
+        if precio_element:
+            precio_normal = precio_element.get_text(strip=True)
+            # Sanitizar el precio y devolverlo
+            return sanitizar_precio(precio_normal)
 
     except Exception as e:
         print(f"Ocurrió un error al obtener el precio: {e}")
 
-    return 0.0
-
+    return None
 
 
 def obtener_descripcion(soup: BeautifulSoup) -> str:
     """Obtiene la descripción del producto desde el HTML proporcionado."""
-    descripcion = 'N/A'  # Valor por defecto si no se encuentra descripción
-
+    
     try:
-        # Intentar obtener la descripción desde el contenedor principal
-        descripcion_element = soup.find(id="feature-bullets")
-        if descripcion_element:
-            desc_ul = descripcion_element.find('ul')
-            #print(desc_ul.get_text(strip=True))
-            descripcion = desc_ul.get_text(strip=True)
-        else:
-            # Si no se encuentra, intentar obtener desde otro contenedor
-            texto_listas = []
-            descripcion_container = soup.find(id="productFactsDesktop_feature_div")
-            if descripcion_container:
-                descripciones = descripcion_container.find_all('ul')
-                for i in descripciones:
-                    texto_listas.append(i.get_text(strip=True))
-                # Unir las descripciones en una sola cadena
-                descripcion = "\n".join(texto_listas)
-            else:
-                # Si tampoco se encuentra, intentar buscar en el div 'productDescription'
-                product_description = soup.find(id="productDescription")
-                if product_description:
-                    descripcion = product_description.get_text(strip=True)
+        # Intentar obtener la descripción desde diferentes contenedores en orden de preferencia
+        for container_id in ["feature-bullets", "productFactsDesktop_feature_div", "productDescription"]:
+            descripcion_element = soup.find(id=container_id)
+            if descripcion_element:
+                # Si se encuentra un contenedor, obtener el texto
+                if container_id == "feature-bullets":
+                    desc_ul = descripcion_element.find('ul')
+                    return desc_ul.get_text(strip=True) if desc_ul else 'N/A'
+                else:
+                    # Para otros contenedores, obtener todas las listas
+                    texto_listas = [ul.get_text(strip=True) for ul in descripcion_element.find_all('ul')]
+                    return "\n".join(texto_listas) if texto_listas else 'N/A'
     
     except Exception as e:
         print(f"Ocurrió un error al obtener la descripción: {e}")
 
-    return descripcion
+    return 'N/A'
 
 
 
@@ -250,42 +218,90 @@ def extract_variations_values(soup: BeautifulSoup):
 
 
 
-
-
-def extract_brand(soup:BeautifulSoup):
-    # Buscar el contenido del script que contiene el JSON
+def extract_brandV1(soup: BeautifulSoup):
+    """Extrae la marca del producto desde el script que contiene el JSON."""
+    
+    # Buscar el script que contiene el JSON de la marca
     script_tag = soup.find('script', text=re.compile('rhapsodyARIngressViewModel'))
 
-    # Si se encuentra el script, extraer el JSON
     if script_tag:
+        # Extraer y limpiar el contenido del script
         script_content = script_tag.string
+        cleaned_script_content = re.sub(r"\\n|\\'", "", script_content).replace(" ", "").replace("\n", "")
+        
+        # Extraer el objeto JSON utilizando una expresión regular
+        match = re.search(r'rhapsodyARIngressViewModel\s*=\s*\{(.*?)\};', cleaned_script_content)
 
-        cleaned_script_content = script_content.replace("\\n", "").replace("\\'", "'").replace(' ', '').replace("\n","")
-
-        cleaned_script_content=cleaned_script_content.split("rhapsodyARIngressViewModel")
-
-        texto_for_regex=cleaned_script_content[1]
-        #print(texto_for_regex)
-        # Usar una expresión regular para extraer el contenido del objeto JSON
-        match = re.search(r'=\{(.*?)\};', texto_for_regex)
-        #print(match.string)
-        #print("match despues del sting")
-        #print(match.group(1))
         if match:
             object_string = match.group(1)
-            object_string = object_string.replace("'", '"')
+            object_string = re.sub(r"'", '"', object_string)  # Reemplazar comillas simples por dobles
             object_string = re.sub(r'(\w+):', r'"\1":', object_string)  # Poner las claves entre comillas
-            object_string = object_string.rstrip(',') 
-            #print(object_string)
+            object_string = object_string.rstrip(',')  # Eliminar la coma final
+            
             # Convertir la cadena de texto a un diccionario JSON
             json_data = json.loads('{' + object_string + '}')
             return json_data
-        else:
-            print("No se encontró el objeto JSON en el script.")
-            return None
-    else:
-        print("No se encontró el script.")
+
+        print("No se encontró el objeto JSON en el script.")
         return None
+
+    print("No se encontró el script.")
+    return None
+
+
+
+
+
+def extract_brand(soup: BeautifulSoup) -> str:
+    """Extrae la marca utilizando v1 o v2 según corresponda."""
+    
+    brand = extract_brandV1(soup)
+
+    if brand is None:
+        brand = extract_brandV2(soup)
+
+    return brand
+
+
+
+
+
+
+
+# def extract_brand(soup:BeautifulSoup):
+#     # Buscar el contenido del script que contiene el JSON
+#     script_tag = soup.find('script', text=re.compile('rhapsodyARIngressViewModel'))
+
+#     # Si se encuentra el script, extraer el JSON
+#     if script_tag:
+#         script_content = script_tag.string
+
+#         cleaned_script_content = script_content.replace("\\n", "").replace("\\'", "'").replace(' ', '').replace("\n","")
+
+#         cleaned_script_content=cleaned_script_content.split("rhapsodyARIngressViewModel")
+
+#         texto_for_regex=cleaned_script_content[1]
+#         #print(texto_for_regex)
+#         # Usar una expresión regular para extraer el contenido del objeto JSON
+#         match = re.search(r'=\{(.*?)\};', texto_for_regex)
+#         #print(match.string)
+#         #print("match despues del sting")
+#         #print(match.group(1))
+#         if match:
+#             object_string = match.group(1)
+#             object_string = object_string.replace("'", '"')
+#             object_string = re.sub(r'(\w+):', r'"\1":', object_string)  # Poner las claves entre comillas
+#             object_string = object_string.rstrip(',') 
+#             #print(object_string)
+#             # Convertir la cadena de texto a un diccionario JSON
+#             json_data = json.loads('{' + object_string + '}')
+#             return json_data
+#         else:
+#             print("No se encontró el objeto JSON en el script.")
+#             return None
+#     else:
+#         print("No se encontró el script.")
+#         return None
 
 
 def extract_manufacturer_from_table(soup: BeautifulSoup):
@@ -319,80 +335,118 @@ def extract_size(soup):
         return None
 
 
+def ignore_irrelevant_dimensions_label(th_text):
+    """Ignora etiquetas que contienen palabras irrelevantes para dimensiones."""
+    th_text = th_text.lower()  # Convertir a minúsculas para comparaciones consistentes
+    ignored_keywords = [
+        "display dimensions", "pantalla artículo", 
+        "item display dimensions", "dimensiones pantalla"
+    ]
+    return any(keyword in th_text for keyword in ignored_keywords)
 
-
-
-
-
-
-def extract_dimensions_and_brand(soup):
+def extract_dimensions(soup: BeautifulSoup) -> str:
+    """Extrae dimensiones del producto desde el HTML proporcionado."""
+    
     dimensiones_producto = None
-    brand_sanitizado = None
-
-    extraction_brand = extract_brand(soup)
-    if extraction_brand:
-        brand_sanitizado = extraction_brand['brand']
-
-
 
     # Buscar la tabla de especificaciones técnicas
-    table = soup.find(id='productDetails_techSpec_section_2') or \
-            soup.find(id='productDetails_techSpec_section_1') or \
-            soup.find(id='productDetails_detailBullets_sections1')
+    tables = [
+        soup.find(id='productDetails_techSpec_section_2'),
+        soup.find(id='productDetails_techSpec_section_1'),
+        soup.find(id='productDetails_detailBullets_sections1'),
+        *soup.find_all("table", "a-keyvalue prodDetTable"),
+    ]
 
-    if table:
-        # Encontrar todas las filas de la tabla
+    for table in tables:
+        if not table:
+            continue  # Saltar si la tabla no existe
+
         rows = table.find_all('tr')
-
-        # Recorre cada fila buscando dimensiones y marca
         for row in rows:
             th = row.find('th').text.strip() if row.find('th') else ''
 
-            if brand_sanitizado ==None:
-                if "Marca" in th or "Fabricante" in th:
-                    marca = row.find('td').text.strip() if row.find('td') else ''
-                    brand_sanitizado = marca
+            # Ignorar si el encabezado contiene palabras irrelevantes
+            if ignore_irrelevant_dimensions_label(th):
+                continue  # Saltar esta fila si contiene términos irrelevantes
 
-            if "Dimensiones" in th or "Dimensions" in th:
+            # Extraer dimensiones
+            if any(keyword in th for keyword in ["Dimensiones", "Dimensions"]):
                 dimensiones_producto = row.find('td').text.strip() if row.find('td') else ''
-                length, width, height = parse_dimensions(dimensiones_producto)
-                print("Dimensiones:", dimensiones_producto)
-                print("Largo", length)
-                print("Ancho", width)
-                print("Alto", height)
+                #print("Dimensiones:", dimensiones_producto)  # Para depuración
+                break  # Salir del bucle si se encuentra dimensiones
 
-    # Si no se encontró la tabla, buscar en el div con ID 'detailBullets_feature_div'
-    if not dimensiones_producto or not brand_sanitizado:
+        if dimensiones_producto:
+            break  # Salir si se han encontrado dimensiones
+
+    # Si no se encontró en la tabla, buscar en el div con ID 'detailBullets_feature_div'
+    if not dimensiones_producto:
         detalles_productos_container = soup.find(id="detailBullets_feature_div")
         if detalles_productos_container:
             items = detalles_productos_container.find_all('li')
 
-            # Recorre los elementos de la lista buscando dimensiones
             for item in items:
                 label_element = item.find(class_='a-text-bold')
                 label = label_element.text.strip() if label_element else ''
 
-                if dimensiones_producto and brand_sanitizado:
-                    break
+                # Ignorar si el encabezado contiene palabras irrelevantes
+                if ignore_irrelevant_dimensions_label(label):
+                    continue  # Saltar este elemento si contiene términos irrelevantes
 
-                if "Dimensiones" in label or "Dimensions" in label:
+                # Extraer dimensiones
+                if any(keyword in label for keyword in ["Dimensiones", "Dimensions"]):
                     spans = item.find_all('span')
                     if len(spans) > 2:
                         dimensiones_producto = spans[2].text.strip()
                         peso = dimensiones_producto.split(";")[1].strip() if ";" in dimensiones_producto else ''
-                        # peso_convertido = parse_weight(peso)
-                        length, width, height = parse_dimensions(dimensiones_producto)
-                        print("Dimensiones:", dimensiones_producto)
-                        print("Largo", length)
-                        print("Ancho", width)
-                        print("Alto", height)
-                        print("Peso", peso)
-                        # print("Peso convertido", peso_convertido)
+                        print("Peso:", peso)  # Para depuración
+                        break  # Salir si se encuentra dimensiones
 
-    return brand_sanitizado, dimensiones_producto
+    return dimensiones_producto
 
 
 
+
+def extract_brandV2(soup: BeautifulSoup) -> str:
+    """Extrae la marca del producto desde el HTML proporcionado."""
+    
+    brand_sanitizado = None
+    # brand_data = extract_brand(soup)
+
+    # if brand_data is not None:
+    #     brand_sanitizado = brand_data.get('brand')
+
+    # Buscar la tabla de especificaciones técnicas
+    tables = [
+        soup.find(id='productDetails_techSpec_section_2'),
+        soup.find(id='productDetails_techSpec_section_1'),
+        soup.find(id='productDetails_detailBullets_sections1'),
+        *soup.find_all("table", "a-keyvalue prodDetTable"),
+    ]
+
+    for table in tables:
+        if not table:
+            continue  # Saltar si la tabla no existe
+
+        rows = table.find_all('tr')
+        for row in rows:
+            th = row.find('th').text.strip() if row.find('th') else ''
+
+            # Ignorar si el encabezado contiene palabras irrelevantes
+            if ignore_irrelevant_dimensions_label(th):
+                continue  # Saltar esta fila si contiene términos irrelevantes
+
+            # Extraer marca
+            if brand_sanitizado is None and any(keyword in th for keyword in ["Marca", "Brand", "Fabricante"]):
+                brand_sanitizado = row.find('td').text.strip() if row.find('td') else ''
+
+            # Salir si se ha encontrado la marca
+            if brand_sanitizado:
+                break
+
+        if brand_sanitizado:
+            break  # Salir si se ha encontrado la marca
+
+    return brand_sanitizado
 
 
 
@@ -439,23 +493,25 @@ def filtrar_ropa_y_eliminar_sku(diccionario, ropa, lista_skus_a_eliminar):
 
 
 
-def is_page_not_found(soup:BeautifulSoup) -> bool:
-    # Obtiene el HTML de la página
-
+def is_page_not_found(soup: BeautifulSoup) -> bool:
+    """Verifica si la página mostrada es un error de 'Página no encontrada'."""
     
-    # Busca la etiqueta <title>
-    title_tag = soup.find('title')
-    if title_tag:
-        title_text = title_tag.text.strip()
-        if "Page Not Found" in title_text or "Documento no encontrado" in title_text:
-            return True
-
-    # Verifica el contenido del <body> para mensajes de error
-    body_tag = soup.find('body')
-    if body_tag:
-        body_text = body_tag.text.strip()
-        if "Lo sentimos. La dirección web que has especificado no es una página activa de nuestro sitio." in body_text:
-            return True
+    # Lista de palabras clave que indican que la página no se encontró
+    keywords = [
+        "Page Not Found",
+        "Documento no encontrado",
+        "Lo sentimos. La dirección web que has especificado no es una página activa de nuestro sitio."
+    ]
+    
+    # Comprueba el título de la página
+    title_tag = soup.title
+    if title_tag and any(keyword in title_tag.text for keyword in keywords[:2]):
+        return True
+    
+    # Comprueba el cuerpo de la página
+    body_text = soup.body.get_text(strip=True) if soup.body else ""
+    if any(keyword in body_text for keyword in keywords[2:]):
+        return True
 
     return False
 

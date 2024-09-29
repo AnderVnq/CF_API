@@ -4,68 +4,7 @@ from sshtunnel import SSHTunnelForwarder
 
 
 
-class DBConnection:
-    def __init__(self, ssh_host='comprafacil.pics', ssh_port=22, ssh_user='scraper',
-                 ssh_password='@AppScraper..', db_host='localhost', db_port=3306,
-                 db_user='scraper', db_password='AppScraper2024!!', db_name='dev_scp'):
-        self.ssh_host = ssh_host
-        self.ssh_port = ssh_port
-        self.ssh_user = ssh_user
-        self.ssh_password = ssh_password
-        self.db_host = db_host
-        self.db_port = db_port
-        self.db_user = db_user
-        self.db_password = db_password
-        self.db_name = db_name
-        self.connection = None
-        self.ssh_tunnel = None
 
-    def open_connection(self):
-        try:
-            self.ssh_tunnel = SSHTunnelForwarder(
-                (self.ssh_host, self.ssh_port),
-                ssh_username=self.ssh_user,
-                ssh_password=self.ssh_password,
-                remote_bind_address=(self.db_host, self.db_port)
-            )
-            self.ssh_tunnel.start()
-
-            self.connection = pymysql.connect(
-                host='127.0.0.1',
-                port=self.ssh_tunnel.local_bind_port,
-                user=self.db_user,
-                password=self.db_password,
-                database=self.db_name
-            )
-            print("Conexión exitosa a la base de datos")
-        except Exception as e:
-            print(f"Error al abrir la conexión: {e}")
-
-    def close_connection(self):
-        if self.connection:
-            self.connection.close()
-        if self.ssh_tunnel:
-            self.ssh_tunnel.stop()
-
-    def fetch_product_detail(self, platform):
-        """Ejecutar el procedimiento almacenado para obtener detalles del producto."""
-        try:
-            self.open_connection()  # Abrir la conexión
-
-            with self.connection.cursor() as cursor:
-                cursor.execute("SET @result = '';")  # Inicializa la variable @result
-                cursor.execute("CALL SP_SkuListToUpdate_AmazonPythonV1(%s, @result);", (platform,))
-                cursor.execute("SELECT @result;")
-                result = cursor.fetchone()[0]
-                
-                result_list = json.loads(result) if result else []
-                return result_list  # Devolver la lista de diccionarios
-
-        except Exception as e:
-            print(f"Error al obtener detalles del producto: {e}")
-            return []  # Devolver una lista vacía en caso de error
-        finally:
-            self.close_connection() 
 
 
 
@@ -181,5 +120,76 @@ class Amazon:
                 cursor.close()
             db_connection.close_connection()  # Cerrar la conexión y el túnel SSH
 
+#scraping
 
 
+
+
+
+
+
+#conection
+
+
+class DBConnection:
+    def __init__(self, ssh_host='comprafacil.pics', ssh_port=22, ssh_user='scraper',
+                 ssh_password='@AppScraper..', db_host='localhost', db_port=3306,
+                 db_user='scraper', db_password='AppScraper2024!!', db_name='dev_scp'):
+        self.ssh_host = ssh_host
+        self.ssh_port = ssh_port
+        self.ssh_user = ssh_user
+        self.ssh_password = ssh_password
+        self.db_host = db_host
+        self.db_port = db_port
+        self.db_user = db_user
+        self.db_password = db_password
+        self.db_name = db_name
+        self.connection = None
+        self.ssh_tunnel = None
+
+    def open_connection(self):
+        try:
+            self.ssh_tunnel = SSHTunnelForwarder(
+                (self.ssh_host, self.ssh_port),
+                ssh_username=self.ssh_user,
+                ssh_password=self.ssh_password,
+                remote_bind_address=(self.db_host, self.db_port)
+            )
+            self.ssh_tunnel.start()
+
+            self.connection = pymysql.connect(
+                host='127.0.0.1',
+                port=self.ssh_tunnel.local_bind_port,
+                user=self.db_user,
+                password=self.db_password,
+                database=self.db_name
+            )
+            print("Conexión exitosa a la base de datos")
+        except Exception as e:
+            print(f"Error al abrir la conexión: {e}")
+
+    def close_connection(self):
+        if self.connection:
+            self.connection.close()
+        if self.ssh_tunnel:
+            self.ssh_tunnel.stop()
+
+    def fetch_product_detail(self, platform):
+        """Ejecutar el procedimiento almacenado para obtener detalles del producto."""
+        try:
+            self.open_connection()  # Abrir la conexión
+
+            with self.connection.cursor() as cursor:
+                cursor.execute("SET @result = '';")  # Inicializa la variable @result
+                cursor.execute("CALL SP_SkuListToUpdate_AmazonPythonV1(%s, @result);", (platform,))
+                cursor.execute("SELECT @result;")
+                result = cursor.fetchone()[0]
+                
+                result_list = json.loads(result) if result else []
+                return result_list  # Devolver la lista de diccionarios
+
+        except Exception as e:
+            print(f"Error al obtener detalles del producto: {e}")
+            return []  # Devolver una lista vacía en caso de error
+        finally:
+            self.close_connection() 
