@@ -1,17 +1,22 @@
 from flask import Flask
 from config import Config
 from routes.amazon_routes import product_bp
-
+from routes.resize_img_route import resize_bp
+import firebase_admin
+from firebase_admin import credentials,initialize_app
 
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
-
+cred = credentials.Certificate(Config.FIREBASE_CREDENTIALS)
+initialize_app(cred, {
+    'storageBucket': Config.FIREBASE_STORAGE_BUCKET
+})
 
 # Registrando las rutas
 app.register_blueprint(product_bp)
-
+app.register_blueprint(resize_bp)
 
 
 if __name__ == "__main__":
