@@ -7,6 +7,7 @@ import aiohttp
 import asyncio
 from firebase_admin import storage
 import json
+from config import Config
 
 
 def extract_images(driver, hover_limit=4, wait_time=2):
@@ -76,26 +77,28 @@ def extract_data_image_by_size(soup):
         script_content = script_tag.string.strip()
 
         # Limpieza del contenido del script
-        cleaned_script_content = re.sub(r'\\n|\\\'| +|\n', '', script_content).strip()
-        cleaned_script_content = cleaned_script_content.split(":{\'initial\':")[1]
-        clean_text = cleaned_script_content.split("},\'colorToAsin\'")[0]
+        match = re.search(r"'colorImages':\s*{\s*'initial':(.*?)\},\s*'colorToAsin':\s*{\s*'initial':", script_content, re.DOTALL)
 
-        if clean_text:
-            # texto_for_regex = cleaned_script_content[1]
-            # clean_text = texto_for_regex.split("},'colorToAsin'")[0]
-            # Extraer las URLs de las imágenes
-            json_data = json.loads(clean_text)
-            for item in json_data:
-                if item.get('main'):
-                    main_image_url = next(iter(item['main']))  # Obtiene la primera imagen
-                    extracted_urls.append(main_image_url)
-                    
-                    # Si ya tenemos 4 URLs, rompemos el bucle
-                    if len(extracted_urls) >= 4:
-                        break
+        if match:
+            coincidences = match.group(1).strip()  # Obtiene el contenido capturado
+            #print(coincidences)
+    
+            if coincidences:
+                # texto_for_regex = cleaned_script_content[1]
+                # clean_text = texto_for_regex.split("},'colorToAsin'")[0]
+                # Extraer las URLs de las imágenes
+                json_data = json.loads(coincidences)
+                for item in json_data:
+                    if item.get('main'):
+                        main_image_url = next(iter(item['main']))  # Obtiene la primera imagen
+                        extracted_urls.append(main_image_url)
+                        
+                        # Si ya tenemos 4 URLs, rompemos el bucle
+                        if len(extracted_urls) >= 4:
+                            break
 
     if extracted_urls:
-        return extracted_urls[:4]
+        return extracted_urls
     
     # Retornar None si no se encontraron imágenes
     return None

@@ -192,4 +192,25 @@ class DBConnection:
             print(f"Error al obtener detalles del producto: {e}")
             return []  # Devolver una lista vacía en caso de error
         finally:
-            self.close_connection() 
+            self.close_connection()     
+
+    
+
+
+    def fetch_rezise_img(self,platform):
+        try:
+            self.open_connection()
+
+            with self.connection.cursor() as cursor:
+                cursor.execute("SET @result='';")
+                cursor.execute("CALL SP_ResizeImagesForRepley(%s,@result);",(platform,))
+                cursor.execute("SELECT @result;")
+                result = cursor.fetchone()[0]
+
+                result_list=json.loads(result) if result else []
+                return result_list
+        except Exception as e:
+            print(f"Error al obtener lista para redimencionar {e}")
+            return []
+        finally:
+            self.close_connection()

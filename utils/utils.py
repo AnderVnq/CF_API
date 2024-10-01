@@ -1,11 +1,17 @@
-# from selenium import webdriver
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver.support.ui import WebDriverWait
-# from selenium.webdriver.support import expected_conditions as EC
-# from selenium.webdriver.support.ui import Select
 import json
 import re
 from bs4 import BeautifulSoup
+import os
+from utils.convertidores import inch_to_centimeter
+import time
+from PIL import Image
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
+
+
 
 
 def sanitizar_precio(precio_normal):
@@ -170,16 +176,16 @@ def obtener_descripcion(soup: BeautifulSoup) -> str:
                 # Si se encuentra un contenedor, obtener el texto
                 if container_id == "feature-bullets":
                     desc_ul = descripcion_element.find('ul')
-                    return desc_ul.get_text(strip=True) if desc_ul else 'N/A'
+                    return desc_ul.get_text(strip=True) if desc_ul else None
                 else:
                     # Para otros contenedores, obtener todas las listas
                     texto_listas = [ul.get_text(strip=True) for ul in descripcion_element.find_all('ul')]
-                    return "\n".join(texto_listas) if texto_listas else 'N/A'
+                    return "\n".join(texto_listas) if texto_listas else None
     
     except Exception as e:
         print(f"Ocurrió un error al obtener la descripción: {e}")
 
-    return 'N/A'
+    return None
 
 
 
@@ -265,6 +271,78 @@ def extract_brand(soup: BeautifulSoup) -> str:
 
 
 
+
+
+def size_handle_data_ctrl(text):
+    # Remover "inch" del texto
+    text = re.sub(r'\s*inch\s*', '', text, flags=re.I)
+
+    # Detectar "/" o "-" y dividir el texto, y guardar el delimitador
+    match = re.search(r'[\/-]', text)
+    if match:
+        delimiter = match.group(0)
+        parts = text.split(delimiter)
+    else:
+        # Si no se encuentra ningún delimitador, solo devolvemos el texto convertido
+        parts = [text]
+        delimiter = ''
+
+    # Convertir cada parte de pulgadas a centímetros
+    def inches_to_cm(part):
+        part = part.strip()
+        if part.replace('.', '', 1).isdigit():  # Verifica si es numérico, incluyendo decimales
+            cm_value = float(part) * 2.54  # Convierte pulgadas a centímetros
+            return f"{cm_value:.2f}"  # Formatear a dos decimales
+        return part
+
+    # Aplicar la conversión a todas las partes
+    converted_parts = [inches_to_cm(part) for part in parts]
+
+    # Concatenar las partes convertidas usando el delimitador original
+    result = delimiter.join(converted_parts)
+    return result
+
+
+
+
+def size_handle_data_ctrl(text):
+    # Remover "inch" del texto
+    text = re.sub(r'\s*inch\s*', '', text, flags=re.IGNORECASE)
+    
+    # Detectar "/" o "-" y dividir el texto, y guardar el delimitador
+    delimiter = None
+    parts = []
+    if '/' in text or '-' in text:
+        if '/' in text:
+            delimiter = '/'
+        else:
+            delimiter = '-'
+        parts = text.split(delimiter)
+    else:
+        parts = [text]  # Si no hay delimitador, solo devolvemos el texto
+    # Convertir cada parte de pulgadas a centímetros
+    converted_parts = []
+    for part in parts:
+        part = part.strip()
+        # Asegurarse de que es un número
+        if part.isnumeric():
+            cm_value = format_number_ctrl(inch_to_centimeter(float(part)))
+            converted_parts.append(cm_value)
+        else:
+            converted_parts.append(part)  # Si no es un número, se mantiene como está
+    # Concatenar las partes convertidas usando el delimitador original
+    result = delimiter.join(map(str, converted_parts)) if delimiter else ''.join(map(str, converted_parts))
+    
+    return result
+
+
+
+
+
+
+def format_number_ctrl(value):
+    # Formatear el número según sea necesario
+    return round(value, 2)
 
 
 
@@ -524,7 +602,168 @@ def is_page_not_found(soup: BeautifulSoup) -> bool:
 
 
 
+class HTMLRenderer:
+    def __init__(self, driver):
+        self.driver = driver  # Driver de Selenium inicializado
 
+    def generate_html_table(self, data):
+        """Genera una estructura HTML de tabla a partir de los datos con los estilos proporcionados."""
+        headers = ''.join([f'<th>{header}</th>' for header in data['measures'][0]['headers']])
+        rows = ''.join([
+            '<tr>' + ''.join([f'<td>{col}</td>' for col in row]) + '</tr>'
+            for row in data['measures'][0]['data']
+        ])
+        
+        html_structure = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Table</title>
+            <style>
+                html {{
+                    display: flex;
+                    align-items: center;
+                    flex-direction: column;
+                    gap: 16px;
+                    justify-content: center;
+                    width: 100%;                    
+                }}
+                body {{
+                    max-width: 1024px;
+                    display: flex;
+                    align-items: center;
+                    flex-direction: column;
+                    gap: 30px;
+                    justify-content: center;
+                    width: 100%;
+                    padding:4px;  
+                }}
+                .content_group {{
+                    width: 100%;
+                    padding: 12px;
+                }}
+                table {{
+                    width: 100%;
+                    border-collapse: separate;
+                    border-spacing: 0;
+                    border: 1px solid #9f9f9f;
+                    border-radius: 10px;
+                    overflow: hidden;
+                }}
+                th {{
+                    color: #222;
+                    font-size: 12px;
+                }}
+                td {{
+                    font-size: 12px;
+                }}
+                th, td {{
+                    padding: 6px;
+                    text-align: left;
+                    border-bottom: 1px solid #9f9f9f;
+                }}
+                th:first-child, td:first-child {{
+                    color: #222 !important;
+                    font-weight: 600;
+                }}
+                tr:last-child th, tr:last-child td {{
+                    border-bottom: none;
+                }}
+                th:first-child, td:first-child {{
+                    border-left: 1px solid #9f9f9f;
+                }}
+                th:last-child, td:last-child {{
+                    border-right: 1px solid #9f9f9f;
+                }}
+                .table-title {{
+                    font-weight: 600;
+                    color: #222;
+                    text-align: center;
+                    font-size: 14px;
+                    margin-bottom: 10px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="content_group">
+                <div class="table-title">{data['measures'][0]['title']}</div>
+                <table>
+                    <thead>
+                        <tr>{headers}</tr>
+                    </thead>
+                    <tbody>
+                        {rows}
+                    </tbody>
+                </table>
+            </div>
+        </body>
+        </html>
+        """
+        return html_structure
+
+    def save_html_to_file(self, html_content, file_name='table.html'):
+        """Guarda la estructura HTML en un archivo."""
+        file_path = os.path.join(os.getcwd(), file_name)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        return file_path
+
+    def render_and_capture(self, data, output_image='screenshot.png', delete_after_capture=False):
+        """Genera el HTML, lo carga en el navegador, toma una captura de pantalla, y opcionalmente elimina la captura."""
+        # Generar el HTML de la tabla con los datos
+        html_content = self.generate_html_table(data)
+
+        # Guardar el HTML en un archivo temporal
+        html_file_path = self.save_html_to_file(html_content)
+
+        try:
+            # Cargar el archivo HTML localmente en el navegador
+            self.driver.get(f"file://{html_file_path}")
+            
+            # Esperar a que la tabla sea visible en el DOM
+            WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.TAG_NAME, 'table')))
+            
+            # Encuentra la tabla usando Selenium
+            table_element = self.driver.find_element(By.TAG_NAME, 'table')
+
+            # Obtener las dimensiones de la tabla
+            location = table_element.location
+            size = table_element.size
+
+            # Tomar captura de pantalla de toda la página
+            screenshot_path = os.path.join(os.getcwd(), output_image)
+            self.driver.save_screenshot(screenshot_path)
+
+            # Usar PIL para recortar la captura de pantalla solo a la tabla
+            image = Image.open(screenshot_path)
+            left = location['x']
+            top = location['y']
+            right = left + size['width'] - 75
+            bottom = top + size['height'] +20
+            cropped_image = image.crop((left, top, right, bottom))
+
+            # Guardar la imagen recortada
+            cropped_image.save(screenshot_path)
+
+            # Verificar si se debe eliminar la captura después de guardarla
+            if delete_after_capture:
+                if os.path.exists(screenshot_path):
+                    os.remove(screenshot_path)
+                    return f"La captura de pantalla '{output_image}' ha sido eliminada."
+                else:
+                    return f"Error: No se encontró la captura de pantalla '{output_image}' para eliminar."
+
+            return screenshot_path  # Devuelve la ruta de la captura de pantalla si no se elimina
+
+        except Exception as e:
+            return f"Error al procesar: {e}"
+
+        finally:
+            # Siempre eliminar el archivo HTML temporal después de la captura
+            if os.path.exists(html_file_path):
+                os.remove(html_file_path)
 
     # try:
     #     table = None
