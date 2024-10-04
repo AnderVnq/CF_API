@@ -14,29 +14,19 @@ class Amazon:
     def __init__(self, platform):
         self.platform = platform
         self.__db_connection = DBConnection()  # Inicializar la conexión de base de datos
-        self.__product_detail = self.__db_connection.fetch_product_detail(self.platform)  # Obtener detalles del producto al iniciar
+        self.__product_detail = None #self.__db_connection.fetch_product_detail(self.platform)  # Obtener detalles del producto al iniciar
 
+        self.__variants_detail=None  #self.__db_connection.fetch_variants_db(self.platform)
 
     # Métodos para acceder y modificar product_detail
     def get_product_detail(self):
+        self.__product_detail = self.__db_connection.fetch_product_detail(self.platform)
         return self.__product_detail
 
-    def set_product_detail(self, detail):
-        self.__product_detail = detail
 
-
-    # def update(self, **kwargs):
-    #     # Actualiza solo los atributos que se pasan como argumentos
-    #     for key, value in kwargs.items():
-    #         if hasattr(self, key):
-    #             setattr(self, key, value)
-
-
-    # def to_json(self):
-    #     # Convierte el objeto a un JSON
-    #     return json.dumps(self.__dict__,ensure_ascii=False)
-
-
+    def get_variants_detail(self):
+        self.__variants_detail= self.__db_connection.fetch_variants_db(self.platform)
+        return self.__variants_detail
 
     @classmethod
     def massive_update_model(cls, table, data, id_field='uuid', batch_size=100):
@@ -47,9 +37,7 @@ class Amazon:
         cursor = None  # Inicializar cursor en el ámbito de método
         update_count = 0
         batch = []
-
         try:
-
             cursor = db_connection.connection.cursor()  # Acceder directamente a la conexión
 
             for item in data:
@@ -86,6 +74,67 @@ class Amazon:
                 cursor.close()  # Cerrar el cursor si fue creado
             db_connection.close_connection()  # Cerrar la conexión
 
+
+
+
+
+
+
+
+
+    @classmethod
+    def massive_update_modelv2(cls, table, data, id_field='uuid', batch_size=100):
+        # Crear una instancia de DBConnection (usando valores por defecto)
+        db_connection = DBConnection()
+        db_connection.open_connection()  # Abrir la conexión (incluye el túnel SSH)
+
+        cursor = None  # Inicializar cursor en el ámbito de método
+        update_count = 0
+        batch = []
+        
+        try:
+            cursor = db_connection.connection.cursor()  # Acceder directamente a la conexión
+
+            # Construir la consulta base para `ON DUPLICATE KEY UPDATE`
+            if data:
+                columns = ', '.join(f"`{key}`" for key in data[0].keys())
+                placeholders = ', '.join(['%s'] * len(data[0]))
+                duplicates = ', '.join([f"`{key}` = VALUES(`{key}`)" for key in data[0].keys() if key != id_field])
+                query = f"""
+                    INSERT INTO {table} ({columns})
+                    VALUES ({placeholders})
+                    ON DUPLICATE KEY UPDATE {duplicates}
+                """
+            for item in data:
+                values = tuple(item.values())
+                batch.append(values)
+                if len(batch) >= batch_size:
+                    # Ejecutar el batch utilizando `executemany`
+                    cursor.executemany(query, batch)
+                    db_connection.connection.commit()  # Confirmar cambios
+                    update_count += len(batch)
+                    batch = []  # Limpiar el batch después de ejecutar
+            # Ejecutar cualquier lote restante
+            if batch:
+                cursor.executemany(query, batch)
+                db_connection.connection.commit()  # Confirmar cambios
+                update_count += len(batch)
+
+            print(f"Total de registros actualizados/inseridos: {update_count}")
+            return update_count  # Retornar el número total de registros actualizados
+        except Exception as e:
+            print(f"Error al actualizar los registros: {e}")
+            db_connection.connection.rollback()  # Deshacer cambios en caso de error
+            return None  # Retornar None en caso de error
+        finally:
+            if cursor:
+                cursor.close()  # Cerrar el cursor si fue creado
+            db_connection.close_connection()  # Cerrar la conexión
+
+
+
+
+
     
     @classmethod
     def execute_procedure(cls, platform, data):
@@ -94,8 +143,6 @@ class Amazon:
         db_connection.open_connection()  # Abrir la conexión (incluye el túnel SSH)
 
         try:
-            # Serializar los datos
-            #instance = cls(sku=None)
             
             cursor = db_connection.connection.cursor()
 
@@ -119,6 +166,44 @@ class Amazon:
             if cursor:
                 cursor.close()
             db_connection.close_connection()  # Cerrar la conexión y el túnel SSH
+
+
+
+
+
+    def execture_procedure_variantes(cls, data):
+        db_connection = DBConnection()
+        db_connection.open_connection()  # Abrir la conexión (incluye el túnel SSH)
+        try:
+            # Serializar los datos
+            json_data = json.dumps(data)  # Serializar a formato JSON
+            print(json_data)
+
+            print(type(data))
+            print("")
+            print(type(json_data))
+            cursor = db_connection.connection.cursor()
+
+            # Llamar al procedimiento almacenado pasando la cadena JSON
+            cursor.callproc('SP_SKUVariation_Amazon_CU', (json_data,))
+            rows_affected = cursor.rowcount 
+            db_connection.connection.commit()  
+
+            if rows_affected > 0:
+                print(f"Procedimiento ejecutado con éxito, filas afectadas: {rows_affected}")
+            else:
+                print("Procedimiento ejecutado con éxito, pero no se afectaron filas.")
+
+            return True
+        except Exception as e:
+            print(f"Error al ejecutar el procedimiento: {e}")
+            return False
+        finally:
+            if cursor:
+                cursor.close()
+            db_connection.close_connection()
+
+
 
 #scraping
 
@@ -214,3 +299,23 @@ class DBConnection:
             return []
         finally:
             self.close_connection()
+
+
+
+    def fetch_variants_db(self,platform):
+        try:
+            self.open_connection()
+            with self.connection.cursor() as cursor:
+                cursor.execute("SET @result='';")
+                cursor.execute("CALL SP_GetSkuVariation_Amazon(%s,@result);",(platform,))
+                cursor.execute("SELECT @result")
+                result = cursor.fetchone()[0]
+
+                result_list=json.loads(result) if result else []
+                return result_list
+        except Exception as e :
+            print(f"Error al obtener lista de variantes")
+            return []
+        finally:
+            self.close_connection()
+        

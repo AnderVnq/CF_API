@@ -146,7 +146,7 @@ def extract_data_image_by_size(soup):
 
 
 
-async def download_images(image_urls, sku, max_images=4):
+async def download_images(image_urls, sku, max_images=5):
     sem = asyncio.Semaphore(5)  # Limitar a 5 descargas simultáneas
     sku_lower = sku.lower()
     
@@ -168,7 +168,7 @@ async def download_images(image_urls, sku, max_images=4):
                         bucket = storage.bucket()
                         blob = bucket.blob(image_name)
                         blob.upload_from_string(image_data, content_type='image/jpeg')
-
+                        blob.make_public()
                         # Obtiene la URL de descarga
                         image_url = blob.public_url
                         image_links.append(image_url)  # Agrega la URL a la lista
